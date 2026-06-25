@@ -58,6 +58,11 @@ class PluginConfig:
         return max(10, self._get_int("pushed_history_size", 50))
 
     @property
+    def push_max_per_cycle(self) -> int:
+        """每次定时检测最多推送多少条推荐视频，防止刷屏。"""
+        return max(1, min(20, self._get_int("push_max_per_cycle", 5)))
+
+    @property
     def summary_max_videos(self) -> int:
         return max(1, min(100, self._get_int("summary_max_videos", 20)))
 

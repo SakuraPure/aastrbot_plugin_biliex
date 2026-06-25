@@ -130,10 +130,10 @@ class BiliExPlugin(Star):
             "/bili unbind [标识]  解绑（无参解绑当前）\n"
             "/bili list  列出已绑定账号\n"
             "/bili switch [标识]  切换当前账号\n"
-            "/bili videos [n]  查看最新视频（默认5）\n"
-            "/bili random  随机推送一条视频\n"
-            "/bili summary [n]  AI 总结最新视频标题（默认20）\n"
-            "/bili push  手动触发新视频检测推送\n"
+            "/bili videos [n]  查看首页推荐 n 条（默认5）\n"
+            "/bili random  随机推送一条首页推荐\n"
+            "/bili summary [n]  AI 总结首页推荐标题（默认20）\n"
+            "/bili push  手动触发首页推荐检测推送\n"
             "/bili toggle  开关当前账号自动推送\n"
             "标识可为 uid / 名称 / 绑定 id。"
         )
@@ -230,7 +230,7 @@ class BiliExPlugin(Star):
 
     @bili.command("videos", alias={"视频"})
     async def bili_videos(self, event: AstrMessageEvent, n: int = 5) -> Any:
-        """查看当前账号最新视频"""
+        """查看当前账号首页推荐"""
         try:
             b = await self._active_binding(event)
             text = await self._push.show_videos(b, n)
@@ -243,7 +243,7 @@ class BiliExPlugin(Star):
 
     @bili.command("random", alias={"随机"})
     async def bili_random(self, event: AstrMessageEvent) -> Any:
-        """随机推送一条当前账号视频"""
+        """随机推送一条当前账号首页推荐"""
         try:
             b = await self._active_binding(event)
             videos = await self._video_service.fetch_latest(b)
@@ -262,12 +262,12 @@ class BiliExPlugin(Star):
 
     @bili.command("summary", alias={"总结"})
     async def bili_summary(self, event: AstrMessageEvent, n: int = 20) -> Any:
-        """AI 总结当前账号最新视频标题"""
+        """AI 总结当前账号首页推荐标题"""
         try:
             b = await self._active_binding(event)
             videos = await self._video_service.fetch_latest(b, count=n)
             text = await self._summarizer.summarize(videos, event.unified_msg_origin)
-            yield event.plain_result(f"📝 {b.uname} 近期内容总结：\n\n{text}")
+            yield event.plain_result(f"📝 {b.uname} 首页推荐总结：\n\n{text}")
         except BiliExError as e:
             yield event.plain_result(str(e))
         except Exception as e:  # noqa: BLE001
@@ -276,14 +276,14 @@ class BiliExPlugin(Star):
 
     @bili.command("push", alias={"推送"})
     async def bili_push(self, event: AstrMessageEvent) -> Any:
-        """手动触发新视频检测推送（当前账号）"""
+        """手动触发首页推荐检测推送（当前账号）"""
         try:
             b = await self._active_binding(event)
             n = await self._push.push_new_for_binding(b)
             if n > 0:
-                yield event.plain_result(f"✅ 已推送 {n} 条新视频（{b.uname}）到本会话。")
+                yield event.plain_result(f"✅ 已推送 {n} 条首页推荐（{b.uname}）到本会话。")
             else:
-                yield event.plain_result(f"暂无新视频（{b.uname}）。")
+                yield event.plain_result(f"暂无新的首页推荐（{b.uname}）。")
         except BiliExError as e:
             yield event.plain_result(str(e))
         except Exception as e:  # noqa: BLE001

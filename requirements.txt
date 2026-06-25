@@ -1,2 +1,4 @@
-# 哔哩哔哩 API 封装（全异步，需异步 http 后端；AstrBot 已自带 httpx/aiohttp，通常无需额外安装）
+# 哔哩哔哩 API 封装（绑定验证用，全异步，AstrBot 已自带 httpx/aiohttp 作为其 http 后端）
 bilibili-api-python
+# 首页推荐流直接走 httpx + wbi 签名（AstrBot 已自带 httpx，此处声明以备独立运行）
+httpx

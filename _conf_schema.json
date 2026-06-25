@@ -23,6 +23,12 @@
     "hint": "每个绑定记住的「已推送 bvid」数量上限，超出按时间淘汰，用于去重。",
     "default": 50
   },
+  "push_max_per_cycle": {
+    "description": "单次推送上限",
+    "type": "int",
+    "hint": "每次定时检测最多推送多少条首页推荐视频，防止一次刷屏（推荐流是动态的）。范围 1~20。",
+    "default": 5
+  },
   "summary_max_videos": {
     "description": "AI 总结视频数上限",
     "type": "int",

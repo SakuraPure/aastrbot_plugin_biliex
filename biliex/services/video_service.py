@@ -1,4 +1,4 @@
-"""视频服务：拉取主页视频、检测新投稿、随机抽取、标记已推送。"""
+"""视频服务：拉取首页推荐、检测未推送项、随机抽取、标记已推送。"""
 
 from __future__ import annotations
 
@@ -17,9 +17,9 @@ class VideoService:
         self._config = config
 
     async def fetch_latest(self, binding: Binding, count: int | None = None) -> list[VideoInfo]:
-        """拉取绑定账号的最新视频（按接口返回顺序，通常最新在前）。"""
+        """拉取绑定账号的首页推荐流视频（打开 App/网页首页被推荐的视频）。"""
         n = count or self._config.fetch_count
-        return await self._client.get_videos(binding.uid, binding.credential, n)
+        return await self._client.get_recommendations(binding.credential, n)
 
     async def detect_new(self, binding: Binding, videos: list[VideoInfo]) -> list[VideoInfo]:
         """从视频列表中筛出未推送过的新视频。

@@ -68,3 +68,51 @@ def parse_video_list(data: dict[str, Any] | None, owner_uid: str = "") -> list[V
             )
         )
     return videos
+
+
+def _format_duration(seconds: Any) -> str:
+    s = _as_int(seconds)
+    if s <= 0:
+        return ""
+    return f"{s // 60}:{s % 60:02d}"
+
+
+def parse_recommendation_list(data: dict[str, Any] | None) -> list[VideoInfo]:
+    """解析首页推荐流 ``/x/web-interface/wbi/index/top/feed/rcmd`` 的返回。
+
+    典型结构：``{"data": {"item": [ {id,bvid,title,pic,duration,pubdate, owner:{mid,name,face}, stat:{view,reply,...}, rcmd_reason:{content} } ]}}``
+    """
+    data = data or {}
+    root = data.get("data") if isinstance(data.get("data"), dict) else data
+    items = root.get("item") if isinstance(root, dict) else None
+    if not isinstance(items, list):
+        return []
+
+    videos: list[VideoInfo] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        bvid = _as_str(item.get("bvid"))
+        if not bvid:
+            continue  # 推荐流里可能混入非视频项（广告/番剧），无 bvid 的跳过
+        owner = item.get("owner") if isinstance(item.get("owner"), dict) else {}
+        stat = item.get("stat") if isinstance(item.get("stat"), dict) else {}
+        rcmd = item.get("rcmd_reason")
+        rcmd_text = ""
+        if isinstance(rcmd, dict):
+            rcmd_text = _as_str(rcmd.get("content"))
+        videos.append(
+            VideoInfo(
+                bvid=bvid,
+                aid=_as_str(item.get("id") or item.get("aid")),
+                title=_as_str(item.get("title")),
+                cover=_as_str(item.get("pic")),
+                desc=rcmd_text,
+                pubdate=_as_int(item.get("pubdate")),
+                length=_format_duration(item.get("duration")),
+                play=_as_int(stat.get("view")),
+                comment=_as_int(stat.get("reply")),
+                owner_uid=_as_str(owner.get("mid")),
+            )
+        )
+    return videos

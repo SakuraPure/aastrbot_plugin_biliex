@@ -1,12 +1,12 @@
 name: astrbot_plugin_biliex
 desc: >-
-  哔哩哔哩账户绑定与视频推送。绑定 B 站账号（凭据登录），定时检测并自动推送新投稿视频，
-  支持随机推送单个视频、依据标题对主页视频进行 AI 总结。分层架构，易于维护与扩展。
-version: 0.1.0
+  哔哩哔哩账户绑定与首页推荐推送。绑定 B 站账号（凭据登录），定时推送该账号首页推荐流视频，
+  支持随机推送单个视频、依据标题对首页推荐进行 AI 总结。分层架构，易于维护与扩展。
+version: 0.2.0
 author: iNshine
 repo: https://github.com/iNshine/astrbot-biliex
 display_name: 哔哩哔哩推送
-short_desc: 绑定B站账号，自动推送新视频，支持随机推送与AI标题总结。
+short_desc: 绑定B站账号，推送首页推荐视频，支持随机推送与AI标题总结。
 astrbot_version: ">=4.14.0"
 support_platforms:
   - aiocqhttp
