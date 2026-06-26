@@ -164,6 +164,20 @@ class BiliExPlugin(Star):
                 await ev.send(ev.plain_result("已取消绑定。"))
                 controller.stop()
                 return
+            # 只接受含 Cookie 特征的消息（含 = 且含已知字段名）。
+            # 这样可忽略抢先进入等待器的无关消息（如其它插件的主动消息），避免误判。
+            msg_lower = msg.lower()
+            looks_like_cookie = "=" in msg and any(
+                k in msg_lower for k in ("sessdata", "bili_jct", "buvid3", "dedeuserid")
+            )
+            if not looks_like_cookie:
+                await ev.send(
+                    ev.plain_result(
+                        "未识别到 Cookie，请发送包含 SESSDATA/bili_jct 等字段的完整 Cookie，或发送「取消」。"
+                    )
+                )
+                controller.keep(timeout=120, reset_timeout=True)
+                return
             # 撤回含 Cookie 的消息，防泄露
             if self._config.delete_credential_msg:
                 await recall_message(ev, ev.message_obj.message_id)
@@ -176,7 +190,9 @@ class BiliExPlugin(Star):
                     )
                 )
             except BiliExError as e:
-                await ev.send(ev.plain_result(f"❌ 绑定失败：{e}"))
+                await ev.send(
+                    ev.plain_result(f"❌ 绑定失败：{e}（收到内容长度 {len(msg)}）")
+                )
             except Exception as e:  # noqa: BLE001
                 logger.error(f"biliex bind: {e}")
                 await ev.send(ev.plain_result(f"❌ 发生错误：{e}"))
