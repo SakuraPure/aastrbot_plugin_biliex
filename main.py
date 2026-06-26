@@ -110,7 +110,8 @@ class BiliExPlugin(Star):
             return ""
 
     def _owner_key(self, event: AstrMessageEvent) -> str:
-        return make_owner_key(event.unified_msg_origin, self._sender_id(event))
+        # 按用户全局：platform:sender_id。私聊绑定一次，所有群/私聊通用。
+        return make_owner_key(event.get_platform_name(), self._sender_id(event))
 
     async def _active_binding(self, event: AstrMessageEvent) -> Binding:
         return await self._sub.get_active(self._owner_key(event))
@@ -126,23 +127,25 @@ class BiliExPlugin(Star):
         """查看帮助"""
         yield event.plain_result(
             "哔哩哔哩推送 指令：\n"
-            "/bili bind  交互式绑定账号（私聊更安全）\n"
+            "/bili bind  交互式绑定账号（建议私聊执行，Cookie 不暴露）\n"
             "/bili unbind [标识]  解绑（无参解绑当前）\n"
-            "/bili list  列出已绑定账号\n"
+            "/bili list  列出已绑定账号及其推送目标\n"
             "/bili switch [标识]  切换当前账号\n"
+            "/bili sub  把当前会话加入推送目标（群/私聊皆可）\n"
+            "/bili unsub  把当前会话移出推送目标\n"
             "/bili videos [n]  查看首页推荐 n 条（默认5）\n"
             "/bili random  随机推送一条首页推荐\n"
             "/bili summary [n]  AI 总结首页推荐标题（默认20）\n"
             "/bili push  手动触发首页推荐检测推送\n"
             "/bili toggle  开关当前账号自动推送\n"
-            "标识可为 uid / 名称 / 绑定 id。"
+            "绑定按用户全局，私聊绑定后在任意群 /bili sub 即可推送。标识可为 uid / 名称 / 绑定 id。"
         )
 
     @bili.command("bind", alias={"绑定"})
     async def bili_bind(self, event: AstrMessageEvent) -> Any:
-        """交互式绑定 B 站账号"""
+        """交互式绑定 B 站账号（按用户全局，建议私聊执行）"""
         if event.get_group_id():
-            warn = "⚠️ 你在群聊中绑定，Cookie 会被群成员看到（bot 会尝试撤回，仍建议私聊操作）。\n"
+            warn = "⚠️ 你在群聊中绑定，Cookie 会被群成员看到（bot 会尝试撤回，仍建议私聊执行 /bili bind）。\n"
         else:
             warn = ""
         yield event.plain_result(
@@ -152,8 +155,7 @@ class BiliExPlugin(Star):
         owner_key = self._owner_key(event)
         umo = event.unified_msg_origin
         sender_id = self._sender_id(event)
-        is_group = bool(event.get_group_id())
-        include_cover = self._config.include_cover
+        platform = event.get_platform_name()
 
         @session_waiter(timeout=120, record_history_chains=False)
         async def bind_waiter(controller: SessionController, ev: AstrMessageEvent) -> None:
@@ -166,8 +168,13 @@ class BiliExPlugin(Star):
             if self._config.delete_credential_msg:
                 await recall_message(ev, ev.message_obj.message_id)
             try:
-                binding = await self._sub.bind(owner_key, umo, sender_id, is_group, msg)
-                await ev.send(ev.plain_result(f"✅ 绑定成功：{binding.uname}（uid: {binding.uid}）"))
+                binding = await self._sub.bind(owner_key, sender_id, platform, msg, umo)
+                await ev.send(
+                    ev.plain_result(
+                        f"✅ 绑定成功：{binding.uname}（uid: {binding.uid}）\n"
+                        f"已自动把当前会话加入推送目标。在其它群/私聊可用 /bili sub 订阅推送。"
+                    )
+                )
             except BiliExError as e:
                 await ev.send(ev.plain_result(f"❌ 绑定失败：{e}"))
             except Exception as e:  # noqa: BLE001
@@ -197,18 +204,21 @@ class BiliExPlugin(Star):
 
     @bili.command("list", alias={"列表"})
     async def bili_list(self, event: AstrMessageEvent) -> Any:
-        """列出已绑定账号"""
+        """列出已绑定账号及其推送目标"""
         try:
             bindings = await self._sub.list_bindings(self._owner_key(event))
             if not bindings:
                 yield event.plain_result("尚未绑定任何账号。使用 /bili bind 绑定。")
                 return
             active = await self._sub.get_active(self._owner_key(event))
+            cur_umo = event.unified_msg_origin
             lines = ["📋 已绑定账号："]
             for b in bindings:
                 mark = "（当前）" if b.binding_id == active.binding_id else ""
                 push = "推送开" if b.push_enabled else "推送关"
-                lines.append(f"- {b.uname}（uid: {b.uid}）{mark} [{push}]")
+                tgt = len(b.push_targets)
+                here = "，本会话已订阅" if cur_umo in b.push_targets else ""
+                lines.append(f"- {b.uname}（uid: {b.uid}）{mark} [{push}] 推送目标 {tgt} 个{here}")
             yield event.plain_result("\n".join(lines))
         except BiliExError as e:
             yield event.plain_result(str(e))
@@ -226,6 +236,36 @@ class BiliExPlugin(Star):
             yield event.plain_result(str(e))
         except Exception as e:  # noqa: BLE001
             logger.error(f"biliex switch: {e}")
+            yield event.plain_result(f"❌ 发生错误：{e}")
+
+    @bili.command("sub", alias={"订阅"})
+    async def bili_sub(self, event: AstrMessageEvent) -> Any:
+        """把当前会话加入当前账号的推送目标"""
+        try:
+            b, added = await self._sub.subscribe(self._owner_key(event), event.unified_msg_origin)
+            if added:
+                yield event.plain_result(f"✅ 已把本会话加入 {b.uname} 的推送目标（共 {len(b.push_targets)} 个）。")
+            else:
+                yield event.plain_result(f"本会话已在 {b.uname} 的推送目标中，无需重复订阅。")
+        except BiliExError as e:
+            yield event.plain_result(str(e))
+        except Exception as e:  # noqa: BLE001
+            logger.error(f"biliex sub: {e}")
+            yield event.plain_result(f"❌ 发生错误：{e}")
+
+    @bili.command("unsub", alias={"退订"})
+    async def bili_unsub(self, event: AstrMessageEvent) -> Any:
+        """把当前会话移出当前账号的推送目标"""
+        try:
+            b, removed = await self._sub.unsubscribe(self._owner_key(event), event.unified_msg_origin)
+            if removed:
+                yield event.plain_result(f"✅ 已把本会话移出 {b.uname} 的推送目标（剩余 {len(b.push_targets)} 个）。")
+            else:
+                yield event.plain_result(f"本会话不在 {b.uname} 的推送目标中。")
+        except BiliExError as e:
+            yield event.plain_result(str(e))
+        except Exception as e:  # noqa: BLE001
+            logger.error(f"biliex unsub: {e}")
             yield event.plain_result(f"❌ 发生错误：{e}")
 
     @bili.command("videos", alias={"视频"})
@@ -354,9 +394,9 @@ class BiliExPlugin(Star):
 
     @filter.llm_tool(name="bili_list_bound_accounts")
     async def tool_list_bound_accounts(self, event: AstrMessageEvent) -> Any:
-        '''列出当前用户已绑定的所有哔哩哔哩账号（含 uid、名称、是否为当前账号、推送开关），返回给由你（AI）。
+        '''列出当前用户已绑定的所有哔哩哔哩账号（含 uid、名称、是否为当前账号、推送开关、推送目标数），返回给你（AI）。
 
-        当用户问「我绑定了哪些B站账号」「有几个账号」「当前是哪个账号」时调用此工具。
+        当用户问「我绑定了哪些B站账号」「有几个账号」「当前是哪个账号」「推送到哪」时调用此工具。
         '''
         try:
             bindings = await self._sub.list_bindings(self._owner_key(event))
@@ -364,11 +404,13 @@ class BiliExPlugin(Star):
                 yield "当前用户尚未绑定任何哔哩哔哩账号。请引导用户使用 /bili bind 绑定账号。"
                 return
             active = await self._sub.get_active(self._owner_key(event))
+            cur_umo = event.unified_msg_origin
             lines = ["已绑定账号："]
             for b in bindings:
                 mark = "（当前）" if b.binding_id == active.binding_id else ""
                 push = "推送开" if b.push_enabled else "推送关"
-                lines.append(f"- {b.uname}（uid: {b.uid}）{mark} [{push}]")
+                here = "，本会话已订阅" if cur_umo in b.push_targets else ""
+                lines.append(f"- {b.uname}（uid: {b.uid}）{mark} [{push}] 推送目标 {len(b.push_targets)} 个{here}")
             yield "\n".join(lines)
         except BiliExError as e:
             yield f"查询失败：{e}。请把失败原因告诉用户。"
@@ -391,3 +433,39 @@ class BiliExPlugin(Star):
         except Exception as e:  # noqa: BLE001
             logger.error(f"biliex tool_switch_account: {e}")
             yield f"切换失败：{e}。请把失败原因告诉用户。"
+
+    @filter.llm_tool(name="bili_subscribe_push")
+    async def tool_subscribe_push(self, event: AstrMessageEvent) -> Any:
+        '''把当前会话（群或私聊）加入当前激活账号的推送目标。之后该账号的首页推荐新视频会推送到本会话。无需 Cookie。
+
+        当用户说「把B站推送发到这个群」「这个群也要接收推送」「在这里订阅推送」时调用此工具。
+        '''
+        try:
+            b, added = await self._sub.subscribe(self._owner_key(event), event.unified_msg_origin)
+            if added:
+                yield f"已把当前会话加入 {b.uname} 的推送目标（共 {len(b.push_targets)} 个）。请把结果告诉用户。"
+            else:
+                yield f"当前会话已在 {b.uname} 的推送目标中。请把结果告诉用户。"
+        except BiliExError as e:
+            yield f"订阅失败：{e}。请把失败原因告诉用户。"
+        except Exception as e:  # noqa: BLE001
+            logger.error(f"biliex tool_subscribe_push: {e}")
+            yield f"订阅失败：{e}。请把失败原因告诉用户。"
+
+    @filter.llm_tool(name="bili_unsubscribe_push")
+    async def tool_unsubscribe_push(self, event: AstrMessageEvent) -> Any:
+        '''把当前会话从当前激活账号的推送目标中移除。之后该账号的新视频不再推送到本会话。
+
+        当用户说「这个群别推了」「取消这个群的推送」「这里别再发B站推送」时调用此工具。
+        '''
+        try:
+            b, removed = await self._sub.unsubscribe(self._owner_key(event), event.unified_msg_origin)
+            if removed:
+                yield f"已把当前会话移出 {b.uname} 的推送目标（剩余 {len(b.push_targets)} 个）。请把结果告诉用户。"
+            else:
+                yield f"当前会话不在 {b.uname} 的推送目标中。请把结果告诉用户。"
+        except BiliExError as e:
+            yield f"退订失败：{e}。请把失败原因告诉用户。"
+        except Exception as e:  # noqa: BLE001
+            logger.error(f"biliex tool_unsubscribe_push: {e}")
+            yield f"退订失败：{e}。请把失败原因告诉用户。"

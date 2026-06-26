@@ -77,19 +77,19 @@ class VideoInfo:
 
 @dataclass
 class Binding:
-    """一条「绑定」：某会话中的某成员 绑定了一个 B 站账号。
+    """一条「绑定」：某用户（owner_key 全局）绑定了一个 B 站账号。
 
-    ``owner_key`` 形如 ``"{umo}|{sender_id}"``，唯一定位「某会话中的某成员」；
-    ``umo`` 为推送目标（群或私聊会话）。
+    ``owner_key`` 形如 ``"{platform}:{sender_id}"``，全局定位某用户（跨会话）；
+    ``push_targets`` 为已订阅推送的会话（umo）列表，新视频会推送到这些会话。
     """
 
     binding_id: str
     owner_key: str
-    umo: str  # 推送目标会话
     uid: str
     uname: str
     credential: CredentialInfo = field(default_factory=CredentialInfo)
     push_enabled: bool = True
+    push_targets: list[str] = field(default_factory=list)
     last_bvid: str = ""
     pushed_bvids: list[str] = field(default_factory=list)
     created_at: int = 0
@@ -98,11 +98,11 @@ class Binding:
         return {
             "binding_id": self.binding_id,
             "owner_key": self.owner_key,
-            "umo": self.umo,
             "uid": self.uid,
             "uname": self.uname,
             "credential": self.credential.to_dict(),
             "push_enabled": self.push_enabled,
+            "push_targets": list(self.push_targets),
             "last_bvid": self.last_bvid,
             "pushed_bvids": list(self.pushed_bvids),
             "created_at": self.created_at,
@@ -113,11 +113,11 @@ class Binding:
         return cls(
             binding_id=str(data.get("binding_id", "") or ""),
             owner_key=str(data.get("owner_key", "") or ""),
-            umo=str(data.get("umo", "") or ""),
             uid=str(data.get("uid", "") or ""),
             uname=str(data.get("uname", "") or ""),
             credential=CredentialInfo.from_dict(data.get("credential")),
             push_enabled=bool(data.get("push_enabled", True)),
+            push_targets=list(data.get("push_targets", []) or []),
             last_bvid=str(data.get("last_bvid", "") or ""),
             pushed_bvids=list(data.get("pushed_bvids", []) or []),
             created_at=int(data.get("created_at", 0) or 0),
@@ -126,21 +126,19 @@ class Binding:
 
 @dataclass
 class Owner:
-    """绑定归属者：某会话中的某成员，可拥有多个绑定，其中一个为「激活」。"""
+    """绑定归属者：某用户（全局，跨会话），可拥有多个绑定，其中一个为「激活」。"""
 
     owner_key: str
-    umo: str
     sender_id: str
-    is_group: bool
+    platform: str
     active_binding_id: str = ""
     binding_ids: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "owner_key": self.owner_key,
-            "umo": self.umo,
             "sender_id": self.sender_id,
-            "is_group": self.is_group,
+            "platform": self.platform,
             "active_binding_id": self.active_binding_id,
             "binding_ids": list(self.binding_ids),
         }
@@ -149,9 +147,8 @@ class Owner:
     def from_dict(cls, data: dict[str, Any]) -> "Owner":
         return cls(
             owner_key=str(data.get("owner_key", "") or ""),
-            umo=str(data.get("umo", "") or ""),
             sender_id=str(data.get("sender_id", "") or ""),
-            is_group=bool(data.get("is_group", False)),
+            platform=str(data.get("platform", "") or ""),
             active_binding_id=str(data.get("active_binding_id", "") or ""),
             binding_ids=list(data.get("binding_ids", []) or []),
         )

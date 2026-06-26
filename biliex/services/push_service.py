@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Awaitable, Callable
 
 from ..config import PluginConfig
-from ..messaging import build_text_chain, build_video_chain, videos_list_text
+from ..messaging import build_video_chain, videos_list_text
 from ..models import Binding, VideoInfo
 from .video_service import VideoService
 
@@ -22,11 +22,8 @@ class PushService:
         self._config = config
         self._send = sender
 
-    async def send_text(self, umo: str, text: str) -> None:
-        await self._send(umo, build_text_chain(text))
-
     async def push_videos(self, umo: str, videos: list[VideoInfo]) -> int:
-        """逐条推送视频（标题+链接+封面）。返回推送条数。"""
+        """逐条推送视频（标题+链接+封面）到指定会话。返回推送条数。"""
         count = 0
         for v in videos:
             await self._send(umo, build_video_chain(v, include_cover=self._config.include_cover))
@@ -36,10 +33,11 @@ class PushService:
     async def push_new_for_binding(self, binding: Binding) -> int:
         """检测并推送某绑定账号首页推荐中未推送过的视频，自动标记已推送。
 
-        推荐流是动态的，为避免单次刷屏，每周期最多推送 ``push_max_per_cycle`` 条。
-        返回实际推送条数。
+        推送到该绑定所有已订阅的会话（``push_targets``）。推荐流是动态的，为避免单次
+        刷屏，每周期每会话最多推送 ``push_max_per_cycle`` 条。返回每个会话推送的条数
+        （取第一次会话的计数；无订阅会话返回 0）。
         """
-        if not binding.push_enabled:
+        if not binding.push_enabled or not binding.push_targets:
             return 0
         videos = await self._video.fetch_latest(binding)
         new_videos = await self._video.detect_new(binding, videos)
@@ -47,20 +45,17 @@ class PushService:
             return 0
         cap = max(1, self._config.push_max_per_cycle)
         to_push = new_videos[:cap]
-        await self.push_videos(binding.umo, to_push)
+        pushed = 0
+        for umo in binding.push_targets:
+            try:
+                pushed = await self.push_videos(umo, to_push)
+            except Exception as e:  # noqa: BLE001 - 单个会话失败不影响其它
+                from astrbot.api import logger
+
+                logger.warning(f"biliex: 推送到会话 {umo} 失败：{e}")
         # 仅标记实际推送的，未推送的留待下次（若再次被推荐则补推）
         await self._video.mark_pushed(binding, [v.bvid for v in to_push])
-        return len(to_push)
-
-    async def push_random(self, binding: Binding) -> VideoInfo | None:
-        """随机推送一条当前账号首页推荐视频。返回被推送的视频，无视频返回 None。"""
-        videos = await self._video.fetch_latest(binding)
-        picked = self._video.pick_random(videos)
-        if picked is None:
-            await self.send_text(binding.umo, f"账号 {binding.uname} 的首页推荐暂无可推送的视频。")
-            return None
-        await self._send(binding.umo, build_video_chain(picked, include_cover=self._config.include_cover))
-        return picked
+        return pushed
 
     async def show_videos(self, binding: Binding, n: int) -> str:
         """拉取当前账号首页推荐 n 条，返回可回复的纯文本（标题+链接）。不标记已推送。"""

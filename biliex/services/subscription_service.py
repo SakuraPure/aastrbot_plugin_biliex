@@ -1,7 +1,9 @@
-"""订阅（绑定）服务：bind / unbind / list / switch / 取激活绑定。
+"""订阅（绑定）服务：bind / unbind / list / switch / sub / unsub / 取激活绑定。
 
-绑定维度 = ``owner_key``（形如 ``"{umo}|{sender_id}"``）：群聊里每位成员独立，
-私聊天然退化为该用户。一个 owner 可绑定多个 B 站账号，其中一个为「激活」。
+绑定维度 = ``owner_key``（形如 ``"{platform}:{sender_id}"``）：**按用户全局**，
+私聊绑定一次即可在所有群/私聊通用，Cookie 无需在群里暴露。一个 owner 可绑定
+多个 B 站账号，其中一个为「激活」。推送目标由 ``push_targets``（已订阅的会话 umo
+列表）决定，通过 sub / unsub 在各会话里按需订阅。
 """
 
 from __future__ import annotations
@@ -16,9 +18,9 @@ from ..models import Binding, CredentialInfo, Owner
 from ..storage import Storage
 
 
-def make_owner_key(umo: str, sender_id: str) -> str:
-    """构造 owner_key：``{umo}|{sender_id}``。"""
-    return f"{umo}|{sender_id}"
+def make_owner_key(platform: str, sender_id: str) -> str:
+    """构造 owner_key：``{platform}:{sender_id}``（按用户全局）。"""
+    return f"{platform}:{sender_id}"
 
 
 class SubscriptionService:
@@ -26,15 +28,17 @@ class SubscriptionService:
         self._storage = storage
         self._client = client
 
-    async def _get_or_create_owner(self, owner_key: str, umo: str, sender_id: str, is_group: bool) -> Owner:
+    async def _get_or_create_owner(self, owner_key: str, sender_id: str, platform: str) -> Owner:
         owner = await self._storage.get_owner(owner_key)
         if owner is None:
-            owner = Owner(owner_key=owner_key, umo=umo, sender_id=sender_id, is_group=is_group)
+            owner = Owner(owner_key=owner_key, sender_id=sender_id, platform=platform)
             await self._storage.upsert_owner(owner)
         return owner
 
-    async def bind(self, owner_key: str, umo: str, sender_id: str, is_group: bool, cookie: str) -> Binding:
-        """解析 Cookie、验证账号、保存绑定。返回新建的 Binding。"""
+    async def bind(
+        self, owner_key: str, sender_id: str, platform: str, cookie: str, current_umo: str
+    ) -> Binding:
+        """解析 Cookie、验证账号、保存绑定，并自动把当前会话加入推送目标。返回该 Binding。"""
         try:
             cred = parse_cookie(cookie)
         except ValueError as e:
@@ -44,7 +48,7 @@ class SubscriptionService:
         if not info.uid:
             raise BindError("无法从凭据获取账号 uid，请检查 Cookie 是否完整。")
 
-        owner = await self._get_or_create_owner(owner_key, umo, sender_id, is_group)
+        owner = await self._get_or_create_owner(owner_key, sender_id, platform)
         # 去重：同 owner 下同一 uid 不重复绑定
         for bid in owner.binding_ids:
             existing = await self._storage.get_binding(bid)
@@ -52,17 +56,19 @@ class SubscriptionService:
                 # 刷新凭据（用户重新粘贴 Cookie 通常是更新凭据）
                 existing.credential = cred
                 existing.uname = info.name or existing.uname
+                if current_umo and current_umo not in existing.push_targets:
+                    existing.push_targets.append(current_umo)
                 await self._storage.upsert_binding(existing)
                 return existing
 
         binding = Binding(
             binding_id=uuid.uuid4().hex[:8],
             owner_key=owner_key,
-            umo=umo,
             uid=info.uid,
             uname=info.name or info.uid,
             credential=cred,
             push_enabled=True,
+            push_targets=[current_umo] if current_umo else [],
             created_at=int(time.time()),
         )
         await self._storage.save_new_binding(owner, binding)
@@ -138,6 +144,24 @@ class SubscriptionService:
         binding.push_enabled = not binding.push_enabled
         await self._storage.upsert_binding(binding)
         return binding, binding.push_enabled
+
+    async def subscribe(self, owner_key: str, umo: str) -> tuple[Binding, bool]:
+        """把当前会话加入激活绑定的推送目标。返回 (binding, 是否新增)。"""
+        binding = await self.get_active(owner_key)
+        if umo in binding.push_targets:
+            return binding, False
+        binding.push_targets.append(umo)
+        await self._storage.upsert_binding(binding)
+        return binding, True
+
+    async def unsubscribe(self, owner_key: str, umo: str) -> tuple[Binding, bool]:
+        """把当前会话从激活绑定的推送目标移除。返回 (binding, 是否移除)。"""
+        binding = await self.get_active(owner_key)
+        if umo not in binding.push_targets:
+            return binding, False
+        binding.push_targets.remove(umo)
+        await self._storage.upsert_binding(binding)
+        return binding, True
 
 
 def _match_binding(bindings: list[Binding], token: str) -> Binding | None:
