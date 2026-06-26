@@ -159,10 +159,11 @@ class BiliExPlugin(Star):
 
         @session_waiter(timeout=120, record_history_chains=False)
         async def bind_waiter(controller: SessionController, ev: AstrMessageEvent) -> None:
-            from biliex.bili.credential import normalize_cookie_text
-
-            # 归一化全角标点（中文输入法智能标点会把 ;= 转成全角；＝）
-            msg = normalize_cookie_text((ev.message_str or "")).strip()
+            # 归一化全角标点（中文输入法智能标点会把 ;= 转成全角；＝）。
+            # 内联实现，避免依赖 credential.py 的函数（防止部分更新时 import 失败）。
+            msg = (ev.message_str or "").translate(
+                str.maketrans({"；": ";", "＝": "=", "，": ",", "：": ":", "　": " "})
+            ).strip()
             if msg in ("取消", "cancel", "退出"):
                 await ev.send(ev.plain_result("已取消绑定。"))
                 controller.stop()
