@@ -33,6 +33,17 @@ class PushScheduler:
             return
         self._stopped.clear()
         self._task = asyncio.create_task(self._run(), name="biliex-push-scheduler")
+        self._task.add_done_callback(self._on_task_done)
+        logger.info("biliex: 推送调度器任务已创建。")
+
+    @staticmethod
+    def _on_task_done(task: asyncio.Task) -> None:
+        """后台任务意外退出时输出原因，避免静默死亡。"""
+        if task.cancelled():
+            return
+        exc = task.exception()
+        if exc is not None:
+            logger.error(f"biliex: 推送调度器意外退出：{exc!r}")
 
     async def stop(self) -> None:
         if self._task is None:
@@ -50,17 +61,32 @@ class PushScheduler:
 
     def _next_interval(self) -> int:
         """计算下一轮等待时长：不定时模式下在 [min, max] 内随机，否则用固定间隔。"""
-        if self._config.push_random_enabled:
-            return random.randint(self._config.push_interval_min, self._config.push_interval_max)
-        return self._config.push_interval
+        try:
+            if self._config.push_random_enabled:
+                return random.randint(self._config.push_interval_min, self._config.push_interval_max)
+            return self._config.push_interval
+        except Exception as e:
+            # 配置值异常（如 WebUI 填了非数字）不应杀死后台循环
+            logger.warning(f"biliex: 读取推送间隔配置失败（{e}），本轮使用默认 1800 秒。")
+            return 1800
 
     async def _run(self) -> None:
-        logger.info("biliex: 推送调度器已启动。")
+        try:
+            if self._config.push_random_enabled:
+                mode = (
+                    f"不定时模式，间隔 {self._config.push_interval_min}"
+                    f"~{self._config.push_interval_max} 秒随机"
+                )
+            else:
+                mode = f"固定间隔 {self._config.push_interval} 秒"
+        except Exception as e:
+            mode = f"间隔配置读取失败：{e}"
+        logger.info(f"biliex: 推送调度器已启动（{mode}）。")
         # 启动后先等待一个间隔，避免开机即打接口
         while not self._stopped.is_set():
             interval = self._next_interval()
             if self._config.push_random_enabled:
-                logger.debug(f"biliex: 不定时推送，本轮 {interval} 秒后检测。")
+                logger.info(f"biliex: 不定时推送，本轮 {interval} 秒后检测。")
             try:
                 await asyncio.wait_for(self._stopped.wait(), timeout=interval)
             except asyncio.TimeoutError:

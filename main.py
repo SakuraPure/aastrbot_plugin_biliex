@@ -70,7 +70,11 @@ class BiliExPlugin(Star):
 
         # 启动后台推送（on_astrbot_loaded 会再保险一次，start 自带幂等）
         if self._config.push_enabled:
-            self._scheduler.start()
+            try:
+                self._scheduler.start()
+            except Exception as e:
+                # 插件实例化时事件循环可能尚未就绪，等 on_astrbot_loaded 重试
+                logger.warning(f"biliex: 初始化时启动调度器失败（{e}），将在 AstrBot 就绪后重试。")
 
     # --- AstrBot 生命周期 ---
     @filter.on_astrbot_loaded()
@@ -78,6 +82,8 @@ class BiliExPlugin(Star):
         """AstrBot 初始化完成后确保调度器运行（平台就绪后再启动更稳妥）。"""
         if self._config.push_enabled:
             self._scheduler.start()
+        else:
+            logger.info("biliex: 定时推送未启用（push_enabled=false），调度器不启动。")
 
     async def terminate(self) -> None:
         """插件卸载/停用时停止后台任务。"""
