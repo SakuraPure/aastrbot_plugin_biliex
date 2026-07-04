@@ -63,6 +63,11 @@ class PluginConfig:
         return max(self.push_interval_min, self._get_int("push_interval_max", 3600))
 
     @property
+    def push_active(self) -> bool:
+        """定时或不定时任一开启即需要后台调度（两开关相互独立）。"""
+        return self.push_enabled or self.push_random_enabled
+
+    @property
     def fetch_count(self) -> int:
         return max(1, min(50, self._get_int("fetch_count", 10)))
 

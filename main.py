@@ -69,7 +69,7 @@ class BiliExPlugin(Star):
         self._scheduler = PushScheduler(self._storage, self._push, self._config)
 
         # 启动后台推送（on_astrbot_loaded 会再保险一次，start 自带幂等）
-        if self._config.push_enabled:
+        if self._config.push_active:
             try:
                 self._scheduler.start()
             except Exception as e:
@@ -80,10 +80,10 @@ class BiliExPlugin(Star):
     @filter.on_astrbot_loaded()
     async def _on_loaded(self) -> None:
         """AstrBot 初始化完成后确保调度器运行（平台就绪后再启动更稳妥）。"""
-        if self._config.push_enabled:
+        if self._config.push_active:
             self._scheduler.start()
         else:
-            logger.info("biliex: 定时推送未启用（push_enabled=false），调度器不启动。")
+            logger.info("biliex: 定时推送与不定时推送均未开启，调度器不启动。")
 
     async def terminate(self) -> None:
         """插件卸载/停用时停止后台任务。"""

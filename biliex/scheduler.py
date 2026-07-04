@@ -77,8 +77,10 @@ class PushScheduler:
                     f"不定时模式，间隔 {self._config.push_interval_min}"
                     f"~{self._config.push_interval_max} 秒随机"
                 )
+                if self._config.push_enabled:
+                    mode += "；定时推送开关同时开启，以不定时为准"
             else:
-                mode = f"固定间隔 {self._config.push_interval} 秒"
+                mode = f"定时模式，固定间隔 {self._config.push_interval} 秒"
         except Exception as e:
             mode = f"间隔配置读取失败：{e}"
         logger.info(f"biliex: 推送调度器已启动（{mode}）。")
@@ -93,7 +95,7 @@ class PushScheduler:
                 pass
             if self._stopped.is_set():
                 break
-            if not self._config.push_enabled:
+            if not self._config.push_active:
                 continue
             await self._tick()
         logger.info("biliex: 推送调度器已停止。")
