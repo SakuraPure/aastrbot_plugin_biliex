@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import asyncio
+import random
 
 from astrbot.api import logger  # AstrBot 规定的 logger 接口
 
@@ -47,12 +48,21 @@ class PushScheduler:
         except Exception as e:  # pragma: no cover
             logger.warning(f"biliex: 调度器停止时出现异常：{e}")
 
+    def _next_interval(self) -> int:
+        """计算下一轮等待时长：不定时模式下在 [min, max] 内随机，否则用固定间隔。"""
+        if self._config.push_random_enabled:
+            return random.randint(self._config.push_interval_min, self._config.push_interval_max)
+        return self._config.push_interval
+
     async def _run(self) -> None:
         logger.info("biliex: 推送调度器已启动。")
         # 启动后先等待一个间隔，避免开机即打接口
         while not self._stopped.is_set():
+            interval = self._next_interval()
+            if self._config.push_random_enabled:
+                logger.debug(f"biliex: 不定时推送，本轮 {interval} 秒后检测。")
             try:
-                await asyncio.wait_for(self._stopped.wait(), timeout=self._config.push_interval)
+                await asyncio.wait_for(self._stopped.wait(), timeout=interval)
             except asyncio.TimeoutError:
                 pass
             if self._stopped.is_set():

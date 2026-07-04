@@ -50,6 +50,19 @@ class PluginConfig:
         return max(60, self._get_int("push_interval", 1800))
 
     @property
+    def push_random_enabled(self) -> bool:
+        """不定时推送：每轮检测间隔在 [min, max] 内随机取值。"""
+        return self._get_bool("push_random_enabled", False)
+
+    @property
+    def push_interval_min(self) -> int:
+        return max(60, self._get_int("push_interval_min", 1200))
+
+    @property
+    def push_interval_max(self) -> int:
+        return max(self.push_interval_min, self._get_int("push_interval_max", 3600))
+
+    @property
     def fetch_count(self) -> int:
         return max(1, min(50, self._get_int("fetch_count", 10)))
 

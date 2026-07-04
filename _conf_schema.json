@@ -8,8 +8,26 @@
   "push_interval": {
     "description": "推送检测间隔（秒）",
     "type": "int",
-    "hint": "两次新视频检测之间的间隔时间，单位秒。建议不小于 600，避免触发风控。",
+    "hint": "两次新视频检测之间的间隔时间，单位秒。建议不小于 600，避免触发风控。开启「不定时推送」后此项被忽略。",
     "default": 1800
+  },
+  "push_random_enabled": {
+    "description": "启用不定时推送",
+    "type": "bool",
+    "hint": "开启后每轮检测的间隔在「最小间隔」与「最大间隔」之间随机取值，推送时间不规律，更接近真人行为，也更不易触发风控。",
+    "default": false
+  },
+  "push_interval_min": {
+    "description": "不定时推送最小间隔（秒）",
+    "type": "int",
+    "hint": "不定时推送模式下单轮等待时间的下限，单位秒。建议不小于 600。",
+    "default": 1200
+  },
+  "push_interval_max": {
+    "description": "不定时推送最大间隔（秒）",
+    "type": "int",
+    "hint": "不定时推送模式下单轮等待时间的上限，单位秒。若小于最小间隔则按最小间隔处理。",
+    "default": 3600
   },
   "fetch_count": {
     "description": "单次获取视频数",
